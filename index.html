@@ -623,28 +623,62 @@ function calcScore(state) {
   // Semáforo (max 3 pts)
   if (sem.color === 'green') score += 3;
   else if (sem.color === 'yellow') score += 1;
+
   // RSI (max 2 pts)
   const rsi = ind.rsi || 50;
   if (rsi >= 40 && rsi <= 60) score += 2;
   else if (rsi >= 35 && rsi <= 65) score += 1;
-  // Canal (max 2 pts)
+
+  // Canal con toques (max 2 pts)
   if ((ch4.touches || 0) >= 3) score += 2;
   else if ((ch4.touches || 0) >= 1) score += 1;
+
   // Fear & Greed (max 1 pt)
   if (fg >= 35 && fg <= 65) score += 1;
-  // Posición canal (max 1 pt)
+
+  // Posición en canal — piso o techo = momento de decisión (max 1 pt)
   if (ch4.upper?.length) {
     const li = ch4.upper.length - 1;
     const uv = ch4.upper[li], lv = ch4.lower[li];
     const p = state.btcPrice;
     const pct = (p - lv) / (uv - lv) * 100;
-    if (pct < 15 || pct > 85) score += 1; // en piso o techo = momento de decisión
+    if (pct < 15 || pct > 85) score += 1;
   }
+
   // Tiempo desde último disparo (max 1 pt)
   const lastShot = state.lastAutoShot;
   if (!lastShot || (Date.now() - lastShot) > CONFIG.MIN_MINUTES_BETWEEN_SHOTS * 60000) score += 1;
 
-  return Math.min(10, score);
+  // ── CORRELACIÓN CON MERCADOS TRADICIONALES (max 3 pts) ──
+  // DXY bajando → dólar débil → favorable para BTC (+1)
+  const dxy = state.markets?.dxy;
+  const dxyPrev = state.markets?.dxyPrev;
+  if (dxy && dxyPrev) {
+    const dxyChg = (dxy - dxyPrev) / dxyPrev * 100;
+    if (dxyChg < -0.2) score += 1; // DXY bajando = bueno para BTC
+    else if (dxyChg > 0.5) score -= 1; // DXY subiendo fuerte = malo para BTC
+  }
+
+  // S&P500 subiendo → apetito de riesgo → favorable para BTC (+1)
+  const sp = state.markets?.sp500;
+  const spPrev = state.markets?.sp500Prev;
+  if (sp && spPrev) {
+    const spChg = (sp - spPrev) / spPrev * 100;
+    if (spChg > 0.3) score += 1; // S&P subiendo = riesgo ON
+    else if (spChg < -0.8) score -= 1; // S&P cayendo fuerte = riesgo OFF
+  }
+
+  // Oro — si sube mucho indica miedo extremo, puede ser negativo para BTC (+1 si neutral)
+  const gold = state.markets?.gold;
+  const goldPrev = state.markets?.goldPrev;
+  if (gold && goldPrev) {
+    const goldChg = (gold - goldPrev) / goldPrev * 100;
+    if (Math.abs(goldChg) < 0.5) score += 1; // Oro estable = buen contexto macro
+    // Si oro sube >1% = búsqueda refugio = no suma
+  }
+
+  // Normalizar a escala 0-10 (máximo teórico = 13)
+  return Math.max(0, Math.min(10, Math.round(score)));
 }
 
 function getFranja() {
@@ -911,6 +945,8 @@ async function fetchYahooFinance() {
     const map = {sp500:'sp500', nasdaq:'nasdaq', gold:'gold', dxy:'dxy', oil:'oil'};
     for (const [key, id] of Object.entries(map)) {
       if (!data[key]) continue;
+      // Guardar valor anterior para calcular correlación
+      if (STATE.markets[key]) STATE.markets[key+'Prev'] = STATE.markets[key];
       STATE.markets[key] = data[key].price;
       const el = document.getElementById(id);
       if (el) {
