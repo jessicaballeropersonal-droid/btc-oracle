@@ -902,36 +902,62 @@ function getDefaultVersions() {
 // ║   YAHOO FINANCE — MERCADOS TRADICIONALES            ║
 // ╚══════════════════════════════════════════════════════╝
 async function fetchYahooFinance() {
-  const symbols = {
-    '^GSPC': 'sp500', '^IXIC': 'nasdaq',
-    'GC=F': 'gold', 'DX-Y.NYB': 'dxy', 'CL=F': 'oil'
-  };
-  const proxyBase = 'https://query1.finance.yahoo.com/v8/finance/chart/';
-  let anyOk = false;
-  for (const [sym, key] of Object.entries(symbols)) {
-    try {
-      const res = await fetch(`${proxyBase}${encodeURIComponent(sym)}?interval=1d&range=2d`);
-      if (!res.ok) continue;
-      const data = await res.json();
-      const result = data?.chart?.result?.[0];
-      if (!result) continue;
-      const closes = result.indicators?.quote?.[0]?.close || [];
-      const validCloses = closes.filter(v => v != null);
-      if (validCloses.length < 2) continue;
-      const latest = validCloses[validCloses.length - 1];
-      const prev = validCloses[validCloses.length - 2];
-      const chg = ((latest - prev) / prev * 100).toFixed(2);
-      STATE.markets[key] = latest;
-      const el = document.getElementById(key);
+  // Llama al proxy propio en Vercel — evita CORS y usa Yahoo Finance real
+  try {
+    const res = await fetch('/api/markets');
+    if (!res.ok) throw new Error('Proxy error ' + res.status);
+    const data = await res.json();
+    let anyOk = false;
+    const map = {sp500:'sp500', nasdaq:'nasdaq', gold:'gold', dxy:'dxy', oil:'oil'};
+    for (const [key, id] of Object.entries(map)) {
+      if (!data[key]) continue;
+      STATE.markets[key] = data[key].price;
+      const el = document.getElementById(id);
       if (el) {
-        el.textContent = key === 'dxy' ? latest.toFixed(2) : '$' + latest.toFixed(2);
-        el.className = 'market-val ' + (parseFloat(chg) > 0 ? 'up' : 'down');
+        el.textContent = key === 'dxy' ? data[key].price.toFixed(2) : '$' + data[key].price.toFixed(2);
+        el.className = 'market-val ' + (data[key].change > 0 ? 'up' : 'down');
       }
       anyOk = true;
-    } catch(e) {}
-    await new Promise(r => setTimeout(r, 200));
+    }
+    setApiStatus('yahoo', anyOk);
+    if (anyOk) document.getElementById('avStatus').textContent = '✅ Yahoo Finance — Datos reales en tiempo real';
+  } catch(e) {
+    // Fallback a Stooq si el proxy falla
+    console.warn('Proxy falló, usando Stooq:', e.message);
+    await fetchStooqFallback();
   }
-  setApiStatus('yahoo', anyOk ? true : false);
+}
+
+async function fetchStooqFallback() {
+  const symbols = [
+    {stooq:'^spx', key:'sp500', id:'sp500'},
+    {stooq:'^ndq', key:'nasdaq', id:'nasdaq'},
+    {stooq:'xauusd', key:'gold', id:'gold'},
+    {stooq:'dxy.f', key:'dxy', id:'dxy'},
+    {stooq:'cl.f', key:'oil', id:'oil'},
+  ];
+  let anyOk = false;
+  for (const sym of symbols) {
+    try {
+      const res = await fetch(`https://stooq.com/q/l/?s=${sym.stooq}&f=sd2t2ohlcv&h&e=csv`);
+      if (!res.ok) continue;
+      const text = await res.text();
+      const lines = text.trim().split('\n');
+      if (lines.length < 2) continue;
+      const parts = lines[1].split(',');
+      const close = parseFloat(parts[4]);
+      const open = parseFloat(parts[3]);
+      if (!close || isNaN(close)) continue;
+      const chg = ((close-open)/open*100);
+      STATE.markets[sym.key] = close;
+      const el = document.getElementById(sym.id);
+      if (el) { el.textContent = sym.key==='dxy'?close.toFixed(2):'$'+close.toFixed(2); el.className='market-val '+(chg>0?'up':'down'); }
+      anyOk = true;
+    } catch(e) {}
+    await new Promise(r => setTimeout(r, 300));
+  }
+  setApiStatus('yahoo', anyOk);
+  if (anyOk) document.getElementById('avStatus').textContent = '⚠️ Stooq (fallback) — Yahoo Finance no disponible';
 }
 
 // ╔══════════════════════════════════════════════════════╗
