@@ -1,0 +1,26 @@
+{
+  "name": "BTC Oracle",
+  "short_name": "BTC Oracle",
+  "description": "Pronósticos de Bitcoin con IA — Motor automático con franjas inteligentes",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060c08",
+  "theme_color": "#39ff14",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' fill='%23060c08' rx='24'/><text x='96' y='130' font-size='110' text-anchor='middle' fill='%2339ff14'>₿</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%23060c08' rx='64'/><text x='256' y='360' font-size='300' text-anchor='middle' fill='%2339ff14'>₿</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "utilities"],
+  "lang": "es"
+}
