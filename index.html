@@ -589,7 +589,8 @@ select{background:var(--bg3);border:1px solid var(--border);color:var(--text);bo
 // ╚══════════════════════════════════════════════════════╝
 const CONFIG = {
   CLAUDE_MODEL:   'claude-sonnet-4-5',
-  CLAUDE_API_KEY: ['sk-ant-api03-qmNdzG0AMHdqBl_S_Gt6sw-2wTm8LTsI4NGcJLzh79GEWsOr8MOE6NBoZw8_qBpuywk42os40aSDsnMCJqXpaA','oxPUswAA'].join('-'),
+  // API key gestionada de forma segura en Vercel (variable de entorno)
+  // No se expone en el código del browser
   SUPA_URL:       'https://ymzxjuncantobxeftfqd.supabase.co',
   SUPA_KEY:       'sb_publishable_QVFm6UmaITl0VD1k3VqS5Q_N7OnTQhn',
   UPDATE_INTERVAL:   30000,
@@ -610,9 +611,50 @@ const CONFIG = {
   ],
 };
 
-// ╔══════════════════════════════════════════════════════╗
-// ║   SISTEMA DE PUNTUACIÓN 1-10                        ║
-// ╚══════════════════════════════════════════════════════╝
+// ── FUNCIÓN CENTRAL PARA LLAMAR A CLAUDE VIA PROXY SEGURO ──
+async function callClaude(system, userPrompt, useWebSearch=false) {
+  const body = {
+    model: CONFIG.CLAUDE_MODEL,
+    max_tokens: 1000,
+    system: system,
+    messages: [{role: 'user', content: userPrompt}],
+  };
+  if (useWebSearch) {
+    body.tools = [{type: 'web_search_20250305', name: 'web_search'}];
+  }
+  const response = await fetch('/api/claude', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error || `Error ${response.status}`);
+  }
+  const data = await response.json();
+  return data.text || '';
+}
+
+// ── FUNCIÓN PARA CHAT (con historial) ──
+async function callClaudeChat(system, messages) {
+  const body = {
+    model: CONFIG.CLAUDE_MODEL,
+    max_tokens: 1000,
+    system: system,
+    messages: messages,
+  };
+  const response = await fetch('/api/claude', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error || `Error ${response.status}`);
+  }
+  const data = await response.json();
+  return data.text || '';
+}
 function calcScore(state) {
   let score = 0;
   const ind = state.indicators || {};
@@ -1314,20 +1356,11 @@ Semáforo: ${sem.color.toUpperCase()} (${hitRate}% precisión) | Pérdidas conse
 Últimos 5: ${last20.slice(-5).map(f=>`${f.direction}${f.horizon}h=${f.result}`).join(',')||'ninguno'}
 FUENTES CONFIABLES: Fed Reserve, Michael Saylor, BlackRock ETF, Glassnode, CoinDesk, The Block.
 Genera pronósticos 4H Y 24H. Opera solo si confianza ≥ 60.`;
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':CONFIG.CLAUDE_API_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:CONFIG.CLAUDE_MODEL, max_tokens:1000, system:systemPrompt,
-        tools:[{type:'web_search_20250305', name:'web_search'}],
-        messages:[{role:'user', content:userPrompt}]})
-    });
-    if (!response.ok) { const e=await response.text(); throw new Error(`Claude API: ${response.status} — ${e.slice(0,200)}`); }
+    const rawText = await callClaude(systemPrompt, userPrompt, true);
     setApiStatus('claude', true);
-    const data = await response.json();
-    let rawText = data.content?.filter(b=>b.type==='text').map(b=>b.text).join('')||'';
     let parsed;
     try { parsed=JSON.parse(rawText.replace(/```json|```/g,'').trim()); }
-    catch(e) { const m=rawText.match(/\{[\s\S]*\}/); if(m) parsed=JSON.parse(m[0]); else throw new Error('JSON inválido'); }
+    catch(e) { const m=rawText.match(/\{[\s\S]*\}/); if(m) parsed=JSON.parse(m[0]); else throw new Error('JSON inválido: ' + rawText.slice(0,100)); }
 
     const now=new Date(), ts=getColombiaTime();
     const makeFC=(horizon, d) => ({
@@ -1509,15 +1542,8 @@ async function sendChat() {
   if(text) uc.push({type:'text',text});
   STATE.chatHistory.push({role:'user',content:uc});
   try {
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':CONFIG.CLAUDE_API_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:CONFIG.CLAUDE_MODEL,max_tokens:1000,
-        system:`Asistente BTC Oracle. BTC: $${formatPrice(STATE.btcPrice)} | RSI: ${STATE.indicators.rsi||'—'} | Canal: ${STATE.channels.h4.trend||'—'} | Score actual: ${calcScore(STATE)}/10. Responde en español, conciso y técnico.`,
-        messages:STATE.chatHistory.slice(-20)})
-    });
-    const data=await res.json();
-    const reply=data.content?.filter(b=>b.type==='text').map(b=>b.text).join('')||'Sin respuesta';
+    const chatSystem = `Asistente BTC Oracle. BTC: $${formatPrice(STATE.btcPrice)} | RSI: ${STATE.indicators.rsi||'—'} | Canal: ${STATE.channels.h4.trend||'—'} | Score actual: ${calcScore(STATE)}/10. Responde en español, conciso y técnico.`;
+    const reply = await callClaudeChat(chatSystem, STATE.chatHistory.slice(-20));
     STATE.chatHistory.push({role:'assistant',content:reply}); saveState(); addChatMessage('ai',reply);
   } catch(e) { addChatMessage('ai',`Error: ${e.message}`); }
 }
