@@ -341,7 +341,27 @@ select{background:var(--bg3);border:1px solid var(--border);color:var(--text);bo
 .btn-modal-cancel{padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text2);font-family:var(--font);font-size:12px;cursor:pointer}
 .btn-modal-save{padding:8px 20px;border-radius:8px;border:none;background:var(--accent);color:#000;font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer}
 
-@media(max-width:768px){
+/* ── BOTONES PERÍODO KPI ── */
+.kpi-period-btn{padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text3);font-family:var(--mono);font-size:9px;font-weight:700;cursor:pointer;letter-spacing:1px;transition:all 0.2s}
+.kpi-period-btn.active{background:var(--accent);color:#000;border-color:var(--accent)}
+.kpi-period-btn:hover{border-color:var(--accent);color:var(--accent)}
+.kpi-period-btn.active:hover{color:#000}
+/* ── SEMÁFORO DE CONDICIONES ── */
+.condiciones-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:14px 16px}
+.condicion-card{background:var(--bg3);border-radius:8px;padding:10px 12px;border:1px solid var(--border);text-align:center}
+.condicion-label{font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.condicion-val{font-family:var(--font);font-size:13px;font-weight:700}
+.condicion-val.buena{color:var(--green)}.condicion-val.media{color:var(--yellow)}.condicion-val.mala{color:var(--red)}
+.sem-condiciones{display:flex;align-items:center;gap:16px;padding:14px 16px;border-top:1px solid var(--border)}
+.sem-cond-luz{width:36px;height:36px;border-radius:50%;flex-shrink:0;transition:all 0.4s}
+.sem-cond-luz.verde{background:var(--green);box-shadow:var(--green-glow)}
+.sem-cond-luz.amarillo{background:var(--yellow);box-shadow:0 0 16px rgba(255,193,7,0.4)}
+.sem-cond-luz.rojo{background:var(--red);box-shadow:var(--red-glow)}
+.sem-cond-info{flex:1}
+.sem-cond-estado{font-family:var(--font);font-size:15px;font-weight:800;margin-bottom:3px}
+.sem-cond-detalle{font-size:10px;color:var(--text2);line-height:1.5}
+
+@media(max-width:768px){.condiciones-grid{grid-template-columns:1fr 1fr}}
   .grid-main{grid-template-columns:1fr}
   .grid-bottom{grid-template-columns:1fr}
   .grid-two{grid-template-columns:1fr}
@@ -552,7 +572,14 @@ select{background:var(--bg3);border:1px solid var(--border);color:var(--text);bo
 
   <!-- KPIs -->
   <div class="panel grid-full">
-    <div class="panel-header"><h3>📊 KPIs de Rendimiento por Semáforo</h3></div>
+    <div class="panel-header">
+      <h3>📊 KPIs de Rendimiento por Semáforo</h3>
+      <div style="display:flex;gap:6px">
+        <button onclick="setKpiPeriod(7)" id="kpiBtn7" class="kpi-period-btn active">7D</button>
+        <button onclick="setKpiPeriod(30)" id="kpiBtn30" class="kpi-period-btn">30D</button>
+        <button onclick="setKpiPeriod(0)" id="kpiBtn0" class="kpi-period-btn">Todo</button>
+      </div>
+    </div>
     <div class="kpi-grid">
       <div class="kpi-card green-kpi">
         <div class="kpi-label">🟢 Semáforo Verde</div>
@@ -571,6 +598,43 @@ select{background:var(--bg3);border:1px solid var(--border);color:var(--text);bo
         <div class="kpi-pct total" id="kpiTotalPct">—</div>
         <div class="kpi-sub" id="kpiTotalSub">0 aciertos / 0 pronósticos</div>
         <div class="kpi-bar"><div class="kpi-bar-fill total" id="kpiTotalBar" style="width:0%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEMÁFORO DE CONDICIONES DE MERCADO -->
+  <div class="panel grid-full">
+    <div class="panel-header">
+      <h3>🎯 Semáforo de Condiciones de Mercado</h3>
+      <div class="text-xs" style="color:var(--text3)">¿Es buen momento para entrar AHORA?</div>
+    </div>
+    <div class="sem-condiciones">
+      <div class="sem-cond-luz" id="semCondLuz"></div>
+      <div class="sem-cond-info">
+        <div class="sem-cond-estado" id="semCondEstado">Evaluando...</div>
+        <div class="sem-cond-detalle" id="semCondDetalle">—</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-family:var(--font);font-size:24px;font-weight:800;color:var(--accent)" id="semCondScore">—</div>
+        <div class="text-xs">Score /10</div>
+      </div>
+    </div>
+    <div class="condiciones-grid">
+      <div class="condicion-card">
+        <div class="condicion-label">RSI</div>
+        <div class="condicion-val" id="condRSI">—</div>
+      </div>
+      <div class="condicion-card">
+        <div class="condicion-label">Fear & Greed</div>
+        <div class="condicion-val" id="condFG">—</div>
+      </div>
+      <div class="condicion-card">
+        <div class="condicion-label">Canal</div>
+        <div class="condicion-val" id="condCanal">—</div>
+      </div>
+      <div class="condicion-card">
+        <div class="condicion-label">DXY/S&P</div>
+        <div class="condicion-val" id="condMacro">—</div>
       </div>
     </div>
   </div>
@@ -1465,10 +1529,31 @@ function updateSemaforo() {
 }
 
 // ╔══════════════════════════════════════════════════════╗
-// ║   KPIs                                              ║
+// ║   KPIs CON SELECTOR DE PERÍODO                      ║
 // ╚══════════════════════════════════════════════════════╝
+let kpiPeriodDays = 7; // Default: últimos 7 días
+
+function setKpiPeriod(days) {
+  kpiPeriodDays = days;
+  // Actualizar botones activos
+  ['7','30','0'].forEach(d => {
+    const btn = document.getElementById(`kpiBtn${d}`);
+    if (btn) btn.classList.toggle('active', String(days)===d);
+  });
+  updateKPIs();
+}
+
 function updateKPIs() {
-  const resolved = STATE.forecasts.filter(f => f.result !== 'pendiente');
+  const now = new Date();
+  let resolved = STATE.forecasts.filter(f => f.result !== 'pendiente');
+
+  // Filtrar por período
+  if (kpiPeriodDays > 0) {
+    const cutoff = new Date(now.getTime() - kpiPeriodDays * 24 * 60 * 60 * 1000);
+    resolved = resolved.filter(f => new Date(f.expiresAt) >= cutoff);
+  }
+
+  const periodoLabel = kpiPeriodDays === 7 ? 'últimos 7 días' : kpiPeriodDays === 30 ? 'últimos 30 días' : 'histórico total';
 
   function calcKPI(semColor) {
     const group = resolved.filter(f => f.semaforo === semColor);
@@ -1483,20 +1568,92 @@ function updateKPIs() {
   const totalCount = green.total + yellow.total;
   const totalPct = totalCount ? (totalHits/totalCount*100).toFixed(1) : null;
 
-  // Verde
   document.getElementById('kpiGreenPct').textContent = green.pct !== null ? green.pct + '%' : '—';
-  document.getElementById('kpiGreenSub').textContent = `${green.hits} aciertos / ${green.total} pronósticos`;
+  document.getElementById('kpiGreenSub').textContent = `${green.hits} aciertos / ${green.total} pronósticos (${periodoLabel})`;
   document.getElementById('kpiGreenBar').style.width = (green.pct || 0) + '%';
 
-  // Amarillo
   document.getElementById('kpiYellowPct').textContent = yellow.pct !== null ? yellow.pct + '%' : '—';
-  document.getElementById('kpiYellowSub').textContent = `${yellow.hits} aciertos / ${yellow.total} pronósticos`;
+  document.getElementById('kpiYellowSub').textContent = `${yellow.hits} aciertos / ${yellow.total} pronósticos (${periodoLabel})`;
   document.getElementById('kpiYellowBar').style.width = (yellow.pct || 0) + '%';
 
-  // Total
   document.getElementById('kpiTotalPct').textContent = totalPct !== null ? totalPct + '%' : '—';
-  document.getElementById('kpiTotalSub').textContent = `${totalHits} aciertos / ${totalCount} pronósticos`;
+  document.getElementById('kpiTotalSub').textContent = `${totalHits} aciertos / ${totalCount} pronósticos (${periodoLabel})`;
   document.getElementById('kpiTotalBar').style.width = (totalPct || 0) + '%';
+}
+
+// ╔══════════════════════════════════════════════════════╗
+// ║   SEMÁFORO DE CONDICIONES DE MERCADO                ║
+// ╚══════════════════════════════════════════════════════╝
+function updateSemaforoCondiciones() {
+  const score = calcScore(STATE);
+  const ind = STATE.indicators || {};
+  const fg = STATE.fearGreed?.value || 50;
+  const ch4 = STATE.channels?.h4 || {};
+  const rsi = ind.rsi || 50;
+
+  // Determinar estado del semáforo de condiciones
+  let estado, detalle, clase;
+  if (score >= 7) {
+    clase = 'verde';
+    estado = '🟢 CONDICIONES ÓPTIMAS';
+    detalle = `Score ${score}/10 — Las condiciones técnicas y macro son favorables para generar un pronóstico.`;
+  } else if (score >= 5) {
+    clase = 'amarillo';
+    estado = '🟡 CONDICIONES PARCIALES';
+    detalle = `Score ${score}/10 — Hay señales mixtas. Esperar confirmación antes de operar.`;
+  } else {
+    clase = 'rojo';
+    estado = '🔴 CONDICIONES DESFAVORABLES';
+    detalle = `Score ${score}/10 — Las condiciones no son favorables. El motor esperará mejora.`;
+  }
+
+  // Actualizar UI
+  const luz = document.getElementById('semCondLuz');
+  const estadoEl = document.getElementById('semCondEstado');
+  const detalleEl = document.getElementById('semCondDetalle');
+  const scoreEl = document.getElementById('semCondScore');
+
+  if (luz) luz.className = `sem-cond-luz ${clase}`;
+  if (estadoEl) estadoEl.textContent = estado;
+  if (estadoEl) estadoEl.style.color = clase==='verde'?'var(--green)':clase==='amarillo'?'var(--yellow)':'var(--red)';
+  if (detalleEl) detalleEl.textContent = detalle;
+  if (scoreEl) scoreEl.textContent = score;
+
+  // Tarjetas de condiciones individuales
+  const rsiEl = document.getElementById('condRSI');
+  if (rsiEl) {
+    rsiEl.textContent = rsi;
+    rsiEl.className = 'condicion-val ' + (rsi>=40&&rsi<=60?'buena':rsi>=35&&rsi<=65?'media':'mala');
+  }
+
+  const fgEl = document.getElementById('condFG');
+  if (fgEl) {
+    fgEl.textContent = fg + '/100';
+    fgEl.className = 'condicion-val ' + (fg>=35&&fg<=65?'buena':fg>=25&&fg<=75?'media':'mala');
+  }
+
+  const canalEl = document.getElementById('condCanal');
+  if (canalEl) {
+    const toques = ch4.touches || 0;
+    canalEl.textContent = ch4.trend?.toUpperCase() || '—';
+    canalEl.className = 'condicion-val ' + (toques>=3?'buena':toques>=1?'media':'mala');
+  }
+
+  const macroEl = document.getElementById('condMacro');
+  if (macroEl) {
+    const dxy = STATE.markets?.dxy;
+    const sp = STATE.markets?.sp500;
+    let macroStatus = 'NEUTRAL';
+    let macroClase = 'media';
+    if (dxy && sp) {
+      const dxyOk = dxy < 101; // DXY bajo = favorable
+      const spOk = sp > (STATE.markets?.sp500Prev || sp); // S&P subiendo
+      if (dxyOk && spOk) { macroStatus = 'FAVORABLE'; macroClase = 'buena'; }
+      else if (!dxyOk && !spOk) { macroStatus = 'ADVERSO'; macroClase = 'mala'; }
+    }
+    macroEl.textContent = macroStatus;
+    macroEl.className = 'condicion-val ' + macroClase;
+  }
 }
 
 // ╔══════════════════════════════════════════════════════╗
@@ -1820,6 +1977,7 @@ async function updateAll() {
     if(fg.status==='fulfilled'){STATE.fearGreed=fg.value;updateFearGreed(fg.value);}
     if(eth.status==='fulfilled'&&eth.value){STATE.markets.ethPrice=eth.value;const e=document.getElementById('ethPrice');if(e)e.textContent=`$${formatPriceShort(eth.value)}`;}
     calcAllIndicators(); drawChart(); drawPrecisionChart(); updateColombiaTime();
+    updateSemaforoCondiciones();
     checkPendingForecasts();
     // Yahoo Finance cada 5 minutos
     if (!STATE.lastYahooFetch || Date.now()-STATE.lastYahooFetch > 300000) {
