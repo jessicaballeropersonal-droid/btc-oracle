@@ -468,9 +468,12 @@ select{background:var(--bg3);border:1px solid var(--border);color:var(--text);bo
       <div class="chart-pane" id="paneTV">
         <div class="panel-header" style="border-radius:0;border-top:1px solid var(--border)">
           <h3>Tus Canales Manuales — TradingView</h3>
-          <div class="text-xs" style="color:var(--text3)">Dibuja canales — la IA los analiza en el próximo pronóstico</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="text-xs" style="color:var(--text3)">Dibuja canales — la IA los analiza</div>
+            <button onclick="toggleTVFullscreen()" id="btnTVFullscreen" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:10px;font-family:var(--mono);transition:all 0.2s">⛶ Ampliar</button>
+          </div>
         </div>
-        <div style="padding:0;height:400px">
+        <div id="tvContainer" style="padding:0;height:400px">
           <!-- TradingView Widget -->
           <div class="tradingview-widget-container" style="height:100%;width:100%">
             <div id="tradingview_btcoracle" style="height:100%;width:100%"></div>
@@ -501,6 +504,17 @@ select{background:var(--bg3);border:1px solid var(--border);color:var(--text);bo
             </script>
             <script type="text/javascript" src="https://s3.tradingview.com/tv.js" onload="loadTradingView()"></script>
           </div>
+        </div>
+      </div>
+
+      <!-- OVERLAY PANTALLA COMPLETA TRADINGVIEW -->
+      <div id="tvFullscreenOverlay" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg);flex-direction:column">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--bg2);border-bottom:1px solid var(--border)">
+          <div style="font-family:var(--font);font-size:14px;font-weight:700;color:var(--accent)">📊 TradingView — Pantalla Completa</div>
+          <button onclick="toggleTVFullscreen()" style="background:var(--red);border:none;border-radius:6px;color:#fff;padding:6px 14px;cursor:pointer;font-family:var(--font);font-size:11px;font-weight:700">✕ Cerrar</button>
+        </div>
+        <div style="flex:1;position:relative">
+          <iframe id="tvFullscreenFrame" src="https://www.tradingview.com/widgetembed/?frameElementId=tradingview_fs&symbol=BINANCE%3ABTCUSDT&interval=240&hidesidetoolbar=0&symboledit=0&saveimage=0&toolbarbg=060c08&studies=[]&theme=dark&style=1&timezone=America%2FBogota&locale=es" style="width:100%;height:100%;border:none"></iframe>
         </div>
       </div>
     </div>
@@ -1844,7 +1858,7 @@ function showLoading(t='Cargando...'){const el=document.getElementById('loadingT
 function hideLoading(){const ov=document.getElementById('loadingOverlay');if(ov)ov.classList.remove('show');}
 
 // ╔══════════════════════════════════════════════════════╗
-// ║   TABS DE GRÁFICA                                   ║
+// ║   TABS DE GRÁFICA + FULLSCREEN TRADINGVIEW          ║
 // ╚══════════════════════════════════════════════════════╝
 function switchChart(tab) {
   document.getElementById('paneAuto').classList.toggle('active', tab==='auto');
@@ -1852,6 +1866,22 @@ function switchChart(tab) {
   document.getElementById('tabAuto').classList.toggle('active', tab==='auto');
   document.getElementById('tabTV').classList.toggle('active', tab==='tv');
   if (tab==='auto') setTimeout(drawChart, 100);
+}
+
+let tvIsFullscreen = false;
+function toggleTVFullscreen() {
+  const overlay = document.getElementById('tvFullscreenOverlay');
+  const btn = document.getElementById('btnTVFullscreen');
+  tvIsFullscreen = !tvIsFullscreen;
+  if (tvIsFullscreen) {
+    overlay.style.display = 'flex';
+    btn.textContent = '⊠ Reducir';
+    document.body.style.overflow = 'hidden';
+  } else {
+    overlay.style.display = 'none';
+    btn.textContent = '⛶ Ampliar';
+    document.body.style.overflow = 'auto';
+  }
 }
 
 // ╔══════════════════════════════════════════════════════╗
