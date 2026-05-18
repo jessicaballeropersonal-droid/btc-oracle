@@ -416,6 +416,7 @@ select{background:var(--bg3);border:1px solid var(--border);color:var(--text);bo
     </div>
     <div class="topbar-actions">
       <div class="text-xs" id="lastUpdate">Actualizando...</div>
+      <button class="btn-pdf" onclick="toggleTheme()" id="btnTheme" title="Cambiar tema">🌙</button>
       <button class="btn-pdf" onclick="exportPDF()">⬇ PDF</button>
       <button class="btn-logout" onclick="doLogout()">⏻ Salir</button>
     </div>
@@ -1129,7 +1130,7 @@ async function doLogin() {
     } else {
       if (user !== 'admin' || pass !== 'btcoracle2024') throw new Error('Credenciales incorrectas');
     }
-    sessionStorage.setItem('btcOracleAuth', '1');
+    localStorage.setItem('btcOracleAuth', '1');
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('appWrapper').classList.add('visible');
     requestAnimationFrame(() => setTimeout(() => { if (!STATE.appInited) { initApp(); STATE.appInited = true; } }, 50));
@@ -1142,7 +1143,7 @@ async function doLogin() {
 }
 
 function doLogout() {
-  sessionStorage.removeItem('btcOracleAuth');
+  localStorage.removeItem('btcOracleAuth');
   if (STATE.intervalId) clearInterval(STATE.intervalId);
   if (STATE.autoIntervalId) clearInterval(STATE.autoIntervalId);
   STATE.appInited = false;
@@ -1168,22 +1169,108 @@ let STATE = {
   channels: {h4:{upper:[],mid:[],lower:[],trend:'lateral'}, d1:{upper:[],mid:[],lower:[],trend:'lateral'}},
 };
 
-function saveState() {
+// ╔══════════════════════════════════════════════════════╗
+// ║   ALMACENAMIENTO SUPABASE (fuente principal)        ║
+// ╚══════════════════════════════════════════════════════╝
+async function saveState() {
+  // Guardar pronósticos en Supabase
+  try {
+    for (const fc of STATE.forecasts) {
+      if (fc._saved) continue; // Ya guardado
+      await supaInsert('pronosticos', {
+        tiempo: fc.time,
+        horizonte: fc.horizon,
+        direccion: fc.direction,
+        confianza: fc.confidence,
+        precio_entrada: fc.entryPrice,
+        precio_target: fc.targetPrice,
+        precio_stop: fc.stopLoss,
+        resultado: fc.result,
+        semaforo: fc.semaforo || '',
+        franja: fc.franjaName || '',
+        score: fc.autoScore || 0,
+        es_auto: fc.isAuto || false,
+        razon: fc.reason || '',
+        expires_at: fc.expiresAt,
+        precio_cierre: fc.closedPrice || 0,
+      });
+      fc._saved = true;
+    }
+    // Actualizar resultados de pronósticos existentes
+    for (const fc of STATE.forecasts.filter(f => f._saved && f.result !== 'pendiente' && !f._resultSaved)) {
+      try {
+        await fetch(`${CONFIG.SUPA_URL}/rest/v1/pronosticos?tiempo=eq.${encodeURIComponent(fc.time)}&horizonte=eq.${fc.horizon}`, {
+          method: 'PATCH',
+          headers: {'apikey': CONFIG.SUPA_KEY, 'Authorization': `Bearer ${CONFIG.SUPA_KEY}`, 'Content-Type': 'application/json'},
+          body: JSON.stringify({resultado: fc.result, precio_cierre: fc.closedPrice || 0}),
+        });
+        fc._resultSaved = true;
+      } catch(e) {}
+    }
+  } catch(e) { console.warn('Supabase saveState error:', e); }
+  // Backup localStorage
   try {
     localStorage.setItem('btcOracle_v5', JSON.stringify({
-      forecasts: STATE.forecasts, chatHistory: STATE.chatHistory,
-      sourceRanking: STATE.sourceRanking, algorithmVersions: STATE.algorithmVersions,
-      consecutiveLosses: STATE.consecutiveLosses, lastAutoShot: STATE.lastAutoShot,
+      forecasts: STATE.forecasts,
+      chatHistory: STATE.chatHistory,
+      sourceRanking: STATE.sourceRanking,
+      algorithmVersions: STATE.algorithmVersions,
+      consecutiveLosses: STATE.consecutiveLosses,
+      lastAutoShot: STATE.lastAutoShot,
     }));
   } catch(e) {}
 }
 
-function loadState() {
+async function loadState() {
+  // Cargar pronósticos desde Supabase
+  try {
+    const rows = await supaQuery('pronosticos', '?select=*&order=id.asc&limit=200');
+    if (rows && rows.length > 0) {
+      STATE.forecasts = rows.map(r => ({
+        id: r.tiempo + '_' + r.horizonte,
+        time: r.tiempo,
+        horizon: r.horizonte,
+        direction: r.direccion,
+        confidence: r.confianza,
+        entryPrice: r.precio_entrada,
+        targetPrice: r.precio_target,
+        stopLoss: r.precio_stop,
+        result: r.resultado,
+        semaforo: r.semaforo,
+        franjaName: r.franja,
+        autoScore: r.score,
+        isAuto: r.es_auto,
+        reason: r.razon,
+        expiresAt: r.expires_at,
+        closedPrice: r.precio_cierre,
+        _saved: true,
+        _resultSaved: r.resultado !== 'pendiente',
+      }));
+    }
+  } catch(e) { console.warn('Supabase loadState error:', e); }
+
+  // Si no hay datos en Supabase, cargar desde localStorage como fallback
+  if (!STATE.forecasts.length) {
+    try {
+      const s = localStorage.getItem('btcOracle_v5');
+      if (s) {
+        const d = JSON.parse(s);
+        STATE.forecasts = d.forecasts || [];
+        STATE.chatHistory = d.chatHistory || [];
+        STATE.sourceRanking = d.sourceRanking || getDefaultSources();
+        STATE.algorithmVersions = d.algorithmVersions || getDefaultVersions();
+        STATE.consecutiveLosses = d.consecutiveLosses || 0;
+        STATE.lastAutoShot = d.lastAutoShot || null;
+        return;
+      }
+    } catch(e) {}
+  }
+
+  // Cargar resto del estado desde localStorage
   try {
     const s = localStorage.getItem('btcOracle_v5');
     if (s) {
       const d = JSON.parse(s);
-      STATE.forecasts = d.forecasts || [];
       STATE.chatHistory = d.chatHistory || [];
       STATE.sourceRanking = d.sourceRanking || getDefaultSources();
       STATE.algorithmVersions = d.algorithmVersions || getDefaultVersions();
@@ -2046,11 +2133,10 @@ function toggleTVFullscreen() {
 // ╚══════════════════════════════════════════════════════╝
 async function registrarBitacora(franja, score, disparo, razon) {
   const fecha = getColombiaTime();
-  // Guardar en Supabase
   try {
     await supaInsert('bitacora_motor', {fecha, franja, score, disparo, razon});
   } catch(e) { console.warn('Bitacora save error:', e); }
-  // Guardar en localStorage como backup
+  // Cache local
   const bLocal = JSON.parse(localStorage.getItem('btcBitacora')||'[]');
   bLocal.unshift({fecha, franja, score, disparo, razon});
   if (bLocal.length > 100) bLocal.pop();
@@ -2058,9 +2144,16 @@ async function registrarBitacora(franja, score, disparo, razon) {
   renderBitacora();
 }
 
-function renderBitacora() {
+async function renderBitacora() {
   const el = document.getElementById('bitacoraList');
-  const items = JSON.parse(localStorage.getItem('btcBitacora')||'[]');
+  // Intentar cargar desde Supabase
+  let items = [];
+  try {
+    const rows = await supaQuery('bitacora_motor', '?select=*&order=id.desc&limit=50');
+    if (rows && rows.length) items = rows;
+  } catch(e) {}
+  // Fallback localStorage
+  if (!items.length) items = JSON.parse(localStorage.getItem('btcBitacora')||'[]');
   const count = document.getElementById('bitacoraCount');
   if (count) count.textContent = `${items.length} evaluaciones registradas`;
   if (!items.length) { el.innerHTML='<div class="text-xs text-center" style="padding:20px;color:var(--text3)">Las evaluaciones del motor aparecerán aquí</div>'; return; }
@@ -2092,7 +2185,6 @@ function cerrarModalSeguimiento() {
 }
 
 async function guardarSeguimiento(titulo, contexto, fechaRev, tipo='manual', autoGenerado=false) {
-  // Si se llama desde el modal
   if (!titulo) {
     titulo = document.getElementById('segTitulo').value.trim();
     contexto = document.getElementById('segContexto').value.trim();
@@ -2101,32 +2193,30 @@ async function guardarSeguimiento(titulo, contexto, fechaRev, tipo='manual', aut
     cerrarModalSeguimiento();
   }
   const seg = {titulo, contexto, fecha_revision: fechaRev, estado: 'pendiente', tipo, decision: ''};
-  try {
-    await supaInsert('seguimientos', seg);
-  } catch(e) { console.warn('Seguimiento save error:', e); }
-  // Backup local
-  const sLocal = JSON.parse(localStorage.getItem('btcSeguimientos')||'[]');
-  sLocal.unshift({...seg, id: Date.now(), created_at: new Date().toISOString()});
-  localStorage.setItem('btcSeguimientos', JSON.stringify(sLocal));
+  try { await supaInsert('seguimientos', seg); } catch(e) { console.warn('Seguimiento save error:', e); }
   renderSeguimientos();
 }
 
 async function completarSeguimiento(id, decision) {
-  const sLocal = JSON.parse(localStorage.getItem('btcSeguimientos')||'[]');
-  const idx = sLocal.findIndex(s=>s.id===id);
-  if (idx>=0) { sLocal[idx].estado='completado'; sLocal[idx].decision=decision; }
-  localStorage.setItem('btcSeguimientos', JSON.stringify(sLocal));
+  try {
+    await fetch(`${CONFIG.SUPA_URL}/rest/v1/seguimientos?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: {'apikey': CONFIG.SUPA_KEY, 'Authorization': `Bearer ${CONFIG.SUPA_KEY}`, 'Content-Type': 'application/json'},
+      body: JSON.stringify({estado: 'completado', decision}),
+    });
+  } catch(e) { console.warn('Seguimiento update error:', e); }
   renderSeguimientos();
 }
 
-function renderSeguimientos() {
+async function renderSeguimientos() {
   const el = document.getElementById('seguimientosList');
-  const items = JSON.parse(localStorage.getItem('btcSeguimientos')||'[]');
+  let items = [];
+  try {
+    const rows = await supaQuery('seguimientos', '?select=*&order=id.desc&limit=50');
+    if (rows && rows.length) items = rows;
+  } catch(e) {}
   if (!items.length) { el.innerHTML='<div class="text-xs text-center" style="padding:20px;color:var(--text3)">Sin seguimientos aún — crea uno con "+ Nuevo"</div>'; return; }
-  // Verificar vencidos
   const hoy = new Date().toISOString().split('T')[0];
-  items.forEach(s=>{ if(s.estado==='pendiente'&&s.fecha_revision&&s.fecha_revision<hoy) s.estado='vencido'; });
-  localStorage.setItem('btcSeguimientos', JSON.stringify(items));
   el.innerHTML = items.map(s=>`
     <div class="seg-card ${s.estado}">
       <div class="seg-header">
@@ -2144,7 +2234,6 @@ function renderSeguimientos() {
       ${s.decision?`<div class="seg-decision"><strong>Decisión tomada:</strong> ${s.decision}</div>`:''}
     </div>
   `).join('');
-  // Alerta si hay vencidos
   const vencidos = items.filter(s=>s.estado==='vencido').length;
   if (vencidos>0) addChatMessage('system',`⚠️ Tienes <strong>${vencidos} seguimiento${vencidos>1?'s':''} vencido${vencidos>1?'s':''}</strong> pendiente${vencidos>1?'s':''} de revisión.`);
 }
@@ -2249,12 +2338,8 @@ Genera un resumen de máximo 150 palabras que capture: estado del sistema, rendi
     try {
       await supaInsert('contexto_diario', {fecha, resumen, metricas: JSON.stringify(metricas)});
     } catch(e) { console.warn('Contexto save error:', e); }
-
-    // Backup local
-    const cLocal = JSON.parse(localStorage.getItem('btcContexto')||'[]');
-    cLocal.unshift({fecha, resumen, metricas});
-    if (cLocal.length>30) cLocal.pop();
-    localStorage.setItem('btcContexto', JSON.stringify(cLocal));
+    // Cache local para Claude
+    localStorage.setItem('btcUltimoResumen', `CONTEXTO DEL DÍA ANTERIOR (${fecha}): ${resumen}`);
     renderContextoDiario();
     if (!esAutomatico) addChatMessage('system', `📸 Contexto del día guardado correctamente — ${fecha}`);
   } catch(e) {
@@ -2265,11 +2350,15 @@ Genera un resumen de máximo 150 palabras que capture: estado del sistema, rendi
   }
 }
 
-function renderContextoDiario() {
+async function renderContextoDiario() {
   const el = document.getElementById('contextoDiarioList');
-  const items = JSON.parse(localStorage.getItem('btcContexto')||'[]');
+  let items = [];
+  try {
+    const rows = await supaQuery('contexto_diario', '?select=*&order=id.desc&limit=7');
+    if (rows && rows.length) items = rows;
+  } catch(e) {}
   if (!items.length) { el.innerHTML='<div class="text-xs text-center" style="padding:20px;color:var(--text3)">Sin contexto guardado aún</div>'; return; }
-  el.innerHTML = items.slice(0,7).map(c=>`
+  el.innerHTML = items.map(c=>`
     <div class="contexto-card">
       <div class="contexto-fecha">📅 ${c.fecha}</div>
       <div class="contexto-resumen">${c.resumen}</div>
@@ -2277,12 +2366,40 @@ function renderContextoDiario() {
   `).join('');
 }
 
-// Cargar contexto al iniciar para dárselo a Claude
 function cargarContextoParaClaude() {
-  const items = JSON.parse(localStorage.getItem('btcContexto')||'[]');
-  if (!items.length) return '';
-  const ultimo = items[0];
-  return `CONTEXTO DEL DÍA ANTERIOR (${ultimo.fecha}): ${ultimo.resumen}`;
+  // Cargar último contexto desde Supabase async — para uso en initApp
+  return localStorage.getItem('btcUltimoResumen') || '';
+}
+
+// ── MODO OSCURO / CLARO ──
+let isDarkMode = true;
+function toggleTheme() {
+  isDarkMode = !isDarkMode;
+  const btn = document.getElementById('btnTheme');
+  if (isDarkMode) {
+    document.documentElement.style.setProperty('--bg', '#060c08');
+    document.documentElement.style.setProperty('--bg2', '#0b1210');
+    document.documentElement.style.setProperty('--bg3', '#101a14');
+    document.documentElement.style.setProperty('--bg4', '#161f18');
+    document.documentElement.style.setProperty('--text', '#e8f4e8');
+    document.documentElement.style.setProperty('--text2', '#7aab82');
+    document.documentElement.style.setProperty('--text3', '#3d6644');
+    document.documentElement.style.setProperty('--panel-bg', 'rgba(11,18,16,0.92)');
+    if (btn) btn.textContent = '🌙';
+    localStorage.setItem('btcTheme', 'dark');
+  } else {
+    document.documentElement.style.setProperty('--bg', '#f0f4f0');
+    document.documentElement.style.setProperty('--bg2', '#e4ece4');
+    document.documentElement.style.setProperty('--bg3', '#d8e4d8');
+    document.documentElement.style.setProperty('--bg4', '#ccdacc');
+    document.documentElement.style.setProperty('--text', '#0a1a0a');
+    document.documentElement.style.setProperty('--text2', '#1a4a1a');
+    document.documentElement.style.setProperty('--text3', '#2a6a2a');
+    document.documentElement.style.setProperty('--panel-bg', 'rgba(240,244,240,0.95)');
+    if (btn) btn.textContent = '☀️';
+    localStorage.setItem('btcTheme', 'light');
+  }
+  drawChart();
 }
 
 // Supabase insert helper
@@ -2316,6 +2433,9 @@ function checkMedianoche() {
 }
 
 async function initApp() {
+  // Cargar tema guardado
+  const savedTheme = localStorage.getItem('btcTheme');
+  if (savedTheme === 'light') { isDarkMode = true; toggleTheme(); }
   loadState(); renderHistory(); renderSourceRanking(); renderVersionLog(); updateSemaforo(); updateKPIs();
   renderBitacora(); renderSeguimientos(); renderContextoDiario();
   await updateAll();
@@ -2332,7 +2452,7 @@ async function initApp() {
 }
 
 window.addEventListener('load',()=>{
-  if(sessionStorage.getItem('btcOracleAuth')==='1'){
+  if(localStorage.getItem('btcOracleAuth')==='1'){
     document.getElementById('loginScreen').style.display='none';
     document.getElementById('appWrapper').classList.add('visible');
     requestAnimationFrame(()=>setTimeout(()=>{if(!STATE.appInited){initApp();STATE.appInited=true;}},50));
